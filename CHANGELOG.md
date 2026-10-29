@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Cut parser allocations: all three formats allocate tree nodes and object
+  entries in blocks, JSON skips the per-object duplicate-key map for small
+  objects, YAML projection shares node metadata with the parsed tree, and
+  documents parse strings and numbers in place instead of copying them. YAML
+  also classifies plain numbers without regular expressions.
+
 ## v0.5.0
 
 - Execute compiled TQL programs on a register bytecode VM, with lexical slots,

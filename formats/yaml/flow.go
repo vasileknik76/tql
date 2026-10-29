@@ -200,15 +200,15 @@ func (f *flow) plain(inFlow bool) (*syntax.Node, error) {
 		end--
 	}
 	if end == start {
-		return emptyScalar(start), nil
+		return emptyScalar(&f.p.arena, start), nil
 	}
 	if len(parts) > 0 {
 		parts = append(parts, segment{partStart, end})
 		value.Write(s[partStart:end])
-		return &syntax.Node{Kind: syntax.String, Value: value.String(), Start: start, End: end, Style: "multiline-plain", Meta: map[string]any{"segments": parts, "scalarValue": value.String()}}, nil
+		return f.p.arena.node(syntax.Node{Kind: syntax.String, Value: value.String(), Start: start, End: end, Style: "multiline-plain", Meta: map[string]any{"segments": parts, "scalarValue": value.String()}}), nil
 	}
 
-	return scalar(string(s[start:end]), start, end)
+	return scalar(&f.p.arena, string(s[start:end]), start, end)
 }
 func (f *flow) propertyValue(inFlow bool) (*syntax.Node, error) {
 	f.propertyDepth++
@@ -217,7 +217,7 @@ func (f *flow) propertyValue(inFlow bool) (*syntax.Node, error) {
 		return nil, errAt(f.pos, "property nesting limit exceeded")
 	}
 	if f.pos >= f.limit || inFlow && (strings.ContainsRune(",]}", rune(f.p.src[f.pos])) || f.p.src[f.pos] == ':' && (f.pos+1 == f.limit || strings.ContainsRune(" \t\r\n", rune(f.p.src[f.pos+1])))) {
-		return emptyScalar(f.pos), nil
+		return emptyScalar(&f.p.arena, f.pos), nil
 	}
 	return f.node(inFlow)
 }
@@ -238,7 +238,7 @@ func (f *flow) quoted() (*syntax.Node, error) {
 	if f.pos < f.limit && s[f.pos] == q && (q != '\'' || f.pos+1 == f.limit || s[f.pos+1] != '\'') {
 		value := string(s[content:f.pos])
 		f.pos++
-		return quotedNode(value, start, f.pos, q), nil
+		return quotedNode(&f.p.arena, value, start, f.pos, q), nil
 	}
 	buf := append([]byte(nil), s[content:f.pos]...)
 	contentEnd := len(bytes.TrimRight(s[content:f.pos], " \t"))
@@ -253,7 +253,7 @@ func (f *flow) quoted() (*syntax.Node, error) {
 				f.pos++
 				continue
 			}
-			return quotedNode(string(buf), start, f.pos, q), nil
+			return quotedNode(&f.p.arena, string(buf), start, f.pos, q), nil
 		}
 		if c == '\n' || c == '\r' {
 			plainRun = 0
@@ -368,12 +368,12 @@ func (f *flow) quoted() (*syntax.Node, error) {
 	return nil, errAt(start, "unterminated quoted string")
 }
 
-func quotedNode(value string, start, end int, q byte) *syntax.Node {
+func quotedNode(a *nodeArena, value string, start, end int, q byte) *syntax.Node {
 	style := "double"
 	if q == '\'' {
 		style = "single"
 	}
-	return &syntax.Node{Kind: syntax.String, Value: value, Start: start, End: end, Style: style, Meta: map[string]any{"scalarValue": value}}
+	return a.node(syntax.Node{Kind: syntax.String, Value: value, Start: start, End: end, Style: style, Meta: map[string]any{"scalarValue": value}})
 }
 func (f *flow) documentMarker() bool {
 	s := f.p.src
@@ -431,7 +431,7 @@ func (f *flow) collection() (*syntax.Node, error) {
 	if open == '{' {
 		closing, kind = '}', syntax.Object
 	}
-	n := &syntax.Node{Kind: kind, Start: start, Style: "flow"}
+	n := f.p.arena.node(syntax.Node{Kind: kind, Start: start, Style: "flow"})
 	f.pos++
 	for {
 		if err := f.ws(); err != nil {
@@ -456,7 +456,7 @@ func (f *flow) collection() (*syntax.Node, error) {
 		var key *syntax.Node
 		var err error
 		if f.pos < f.limit && (f.p.src[f.pos] == ':' && (f.pos+1 == f.limit || strings.ContainsRune(" \t\r\n,[]{}", rune(f.p.src[f.pos+1]))) || explicit && (f.p.src[f.pos] == ',' || f.p.src[f.pos] == closing)) {
-			key = emptyScalar(f.pos)
+			key = emptyScalar(&f.p.arena, f.pos)
 		} else {
 			key, err = f.node(true)
 			if err != nil {
@@ -487,7 +487,7 @@ func (f *flow) collection() (*syntax.Node, error) {
 			if kind == syntax.Object {
 				n.Entries = append(n.Entries, entry)
 			} else {
-				n.Items = append(n.Items, &syntax.Node{Kind: syntax.Object, Start: elemStart, End: entry.End, Style: "flow-pair", Entries: []*syntax.Entry{entry}})
+				n.Items = append(n.Items, f.p.arena.node(syntax.Node{Kind: syntax.Object, Start: elemStart, End: entry.End, Style: "flow-pair", Entries: []*syntax.Entry{entry}}))
 			}
 		} else {
 			if key.Start == key.End && elemStart == f.pos {
@@ -525,7 +525,7 @@ func (f *flow) mappingEntry(key *syntax.Node, start int, closing byte) (*syntax.
 			return nil, err
 		}
 		if f.pos < f.limit && (f.p.src[f.pos] == ',' || f.p.src[f.pos] == closing) {
-			value = emptyScalar(f.pos)
+			value = emptyScalar(&f.p.arena, f.pos)
 		} else {
 			var err error
 			value, err = f.node(true)
@@ -534,8 +534,8 @@ func (f *flow) mappingEntry(key *syntax.Node, start int, closing byte) (*syntax.
 			}
 		}
 	} else {
-		value = emptyScalar(key.End)
+		value = emptyScalar(&f.p.arena, key.End)
 		value.Meta["flowMissingColon"] = true
 	}
-	return &syntax.Entry{Key: keySpelling(key), KeyStart: key.Start, KeyEnd: key.End, Start: start, End: value.End, Value: value, Meta: map[string]any{"keyNode": key}}, nil
+	return f.p.arena.entry(syntax.Entry{Key: keySpelling(key), KeyStart: key.Start, KeyEnd: key.End, Start: start, End: value.End, Value: value, Meta: map[string]any{"keyNode": key}}), nil
 }

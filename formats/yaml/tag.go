@@ -161,35 +161,32 @@ func (p *parser) constructTag(n *syntax.Node, t tagInfo) error {
 		n.Kind = syntax.String
 		n.Value = text
 	case "int", "float":
-		resolved, e := scalar(text, n.Start, n.End)
-		if e != nil || resolved.Kind != syntax.NumberKind {
+		kind, value := scalarKind(text)
+		if kind != syntax.NumberKind {
 			return errAt(t.start, "invalid !!"+t.name+" scalar")
 		}
-		if t.name == "int" && !intRE.MatchString(string(resolved.Value.(syntax.Number))) {
+		if t.name == "int" && !intLiteral(string(value.(syntax.Number))) {
 			return errAt(t.start, "invalid !!int scalar")
 		}
-		n.Kind = syntax.NumberKind
-		n.Value = resolved.Value
+		n.Kind, n.Value = syntax.NumberKind, value
 	case "bool":
-		resolved, e := scalar(text, n.Start, n.End)
-		if e != nil || resolved.Kind != syntax.Bool {
+		kind, value := scalarKind(text)
+		if kind != syntax.Bool {
 			return errAt(t.start, "invalid !!bool scalar")
 		}
-		n.Kind = syntax.Bool
-		n.Value = resolved.Value
+		n.Kind, n.Value = syntax.Bool, value
 	case "null":
 		if n.Kind == syntax.Object || n.Kind == syntax.Array {
 			return errAt(t.start, "!!null requires a scalar")
 		}
-		resolved, e := scalar(text, n.Start, n.End)
+		kind, _ := scalarKind(text)
 		if text == "" {
-			resolved = &syntax.Node{Kind: syntax.Null}
+			kind = syntax.Null
 		}
-		if e != nil || resolved.Kind != syntax.Null {
+		if kind != syntax.Null {
 			return errAt(t.start, "invalid !!null scalar")
 		}
-		n.Kind = syntax.Null
-		n.Value = nil
+		n.Kind, n.Value = syntax.Null, nil
 	case "map":
 		if n.Kind != syntax.Object {
 			return errAt(t.start, "!!map requires a mapping")
@@ -218,7 +215,7 @@ func tagFits(t tagInfo, value any) bool {
 	case "int":
 		switch x := value.(type) {
 		case syntax.Number:
-			return intRE.MatchString(string(x))
+			return intLiteral(string(x))
 		case int, int64:
 			return true
 		}

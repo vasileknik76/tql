@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 
+	jsonformat "github.com/vasileknik76/tql/formats/json"
 	"github.com/vasileknik76/tql/syntax"
 )
 
@@ -22,7 +23,7 @@ func ParseWith(source []byte, format Format, options ...ParseOption) (*Document,
 		return nil, err
 	}
 	src := bytes.Clone(source)
-	root, err := format.Parse(src)
+	root, err := parseOwned(format, src)
 	if err != nil {
 		return nil, err
 	}
@@ -31,6 +32,17 @@ func ParseWith(source []byte, format Format, options ...ParseOption) (*Document,
 	}
 	syntax.Link(root)
 	return &Document{source: src, root: root, format: format}, nil
+}
+
+// parseOwned lets the built-in JSON backend reference the document's immutable
+// copy instead of copying every string out of it. The check is deliberately an
+// exact type test: a wrapper that embeds the backend and overrides Parse must
+// keep control of parsing.
+func parseOwned(format Format, src []byte) (*syntax.Node, error) {
+	if _, ok := format.(jsonformat.Format); ok {
+		return jsonformat.ParseOwned(src)
+	}
+	return format.Parse(src)
 }
 
 // Document owns a parsed configuration and its original source. Create one with

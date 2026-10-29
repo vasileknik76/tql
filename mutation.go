@@ -16,7 +16,7 @@ func (d *Document) apply(edits []syntax.Edit) error {
 	if err != nil {
 		return err
 	}
-	root, err := d.format.Parse(src)
+	root, err := parseOwned(d.format, src)
 	if err != nil {
 		return fmt.Errorf("format produced invalid output: %w", err)
 	}

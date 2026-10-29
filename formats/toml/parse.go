@@ -28,6 +28,7 @@ func (f Format) WithStyle(style syntax.Style) (syntax.Format, error) {
 var _ syntax.Format = Format{}
 
 type parser struct {
+	arena         nodeArena
 	src           []byte
 	pos           int
 	root, current *syntax.Node
@@ -35,8 +36,8 @@ type parser struct {
 	entries       map[*syntax.Node]map[string]*syntax.Node
 }
 
-func object(style string) *syntax.Node {
-	return &syntax.Node{Kind: syntax.Object, Start: -1, End: -1, Style: style, Meta: map[string]any{}}
+func (p *parser) object(style string) *syntax.Node {
+	return p.arena.node(syntax.Node{Kind: syntax.Object, Start: -1, End: -1, Style: style, Meta: map[string]any{}})
 }
 func (p *parser) err(s string) error {
 	line, col := 1, 1
@@ -111,7 +112,8 @@ func (Format) Parse(src []byte) (*syntax.Node, error) {
 	if !utf8.Valid(src) {
 		return nil, fmt.Errorf("toml: invalid UTF-8")
 	}
-	p := &parser{src: src, root: object("table"), entries: make(map[*syntax.Node]map[string]*syntax.Node)}
+	p := &parser{src: src, entries: make(map[*syntax.Node]map[string]*syntax.Node)}
+	p.root = p.object("table")
 	p.current = p.root
 	for {
 		if err := p.trivia(); err != nil {
@@ -199,7 +201,7 @@ func (p *parser) keypath() ([]string, int, int, error) {
 	return keys, start, p.pos, nil
 }
 func (p *parser) addEntry(n *syntax.Node, key string, v *syntax.Node, ks, ke, start, end int) {
-	e := &syntax.Entry{Key: key, Value: v, KeyStart: ks, KeyEnd: ke, Start: start, End: end}
+	e := p.arena.entry(syntax.Entry{Key: key, Value: v, KeyStart: ks, KeyEnd: ke, Start: start, End: end})
 	n.Entries = append(n.Entries, e)
 	if p.entries[n] == nil {
 		p.entries[n] = make(map[string]*syntax.Node)
@@ -211,7 +213,7 @@ func (p *parser) assign(n *syntax.Node, keys []string, v *syntax.Node, ks, ke, s
 	for _, k := range keys[:len(keys)-1] {
 		next := p.entries[n][k]
 		if next == nil {
-			next = object("table")
+			next = p.object("table")
 			next.Meta["dotted"] = true
 			p.addEntry(n, k, next, ks, ke, -1, -1)
 		} else if next.Kind != syntax.Object || next.Style == "inline" || next.Meta["explicit"] == true {
@@ -259,13 +261,13 @@ func (p *parser) header() error {
 		child := p.entries[n][k]
 		if last && array {
 			if child == nil {
-				child = &syntax.Node{Kind: syntax.Array, Start: -1, End: -1, Style: "tables", Meta: map[string]any{}}
+				child = p.arena.node(syntax.Node{Kind: syntax.Array, Start: -1, End: -1, Style: "tables", Meta: map[string]any{}})
 				p.addEntry(n, k, child, -1, -1, -1, -1)
 			}
 			if child.Kind != syntax.Array || child.Style != "tables" {
 				return p.err("array table conflicts with existing value")
 			}
-			item := object("table")
+			item := p.object("table")
 			item.Meta["explicit"] = true
 			item.Meta["headerStart"] = start
 			item.Meta["headerEnd"] = end
@@ -275,7 +277,7 @@ func (p *parser) header() error {
 			continue
 		}
 		if child == nil {
-			child = object("table")
+			child = p.object("table")
 			p.addEntry(n, k, child, -1, -1, -1, -1)
 		}
 		if child.Kind == syntax.Array && child.Style == "tables" {
@@ -337,7 +339,7 @@ func (p *parser) stringValue() (*syntax.Node, error) {
 	if !multi && p.pos < len(p.src) && p.src[p.pos] == q {
 		value := string(p.src[content:p.pos])
 		p.pos++
-		return &syntax.Node{Kind: syntax.String, Value: value, Start: start, End: p.pos}, nil
+		return p.arena.node(syntax.Node{Kind: syntax.String, Value: value, Start: start, End: p.pos}), nil
 	}
 	var b strings.Builder
 	b.Write(p.src[content:p.pos])
@@ -350,7 +352,7 @@ func (p *parser) stringValue() (*syntax.Node, error) {
 			}
 			if !multi {
 				p.pos++
-				return &syntax.Node{Kind: syntax.String, Value: b.String(), Start: start, End: p.pos}, nil
+				return p.arena.node(syntax.Node{Kind: syntax.String, Value: b.String(), Start: start, End: p.pos}), nil
 			}
 			if run >= 3 {
 				if run > 5 {
@@ -360,7 +362,7 @@ func (p *parser) stringValue() (*syntax.Node, error) {
 					b.WriteByte(q)
 				}
 				p.pos += run
-				return &syntax.Node{Kind: syntax.String, Value: b.String(), Start: start, End: p.pos}, nil
+				return p.arena.node(syntax.Node{Kind: syntax.String, Value: b.String(), Start: start, End: p.pos}), nil
 			}
 		}
 		if c == '\n' || c == '\r' {
@@ -453,7 +455,7 @@ func (p *parser) stringValue() (*syntax.Node, error) {
 	return nil, p.err("unterminated string")
 }
 func (p *parser) array() (*syntax.Node, error) {
-	n := &syntax.Node{Kind: syntax.Array, Start: p.pos, Style: "array"}
+	n := p.arena.node(syntax.Node{Kind: syntax.Array, Start: p.pos, Style: "array"})
 	p.pos++
 	if err := p.trivia(); err != nil {
 		return nil, err
@@ -493,7 +495,7 @@ func (p *parser) array() (*syntax.Node, error) {
 	}
 }
 func (p *parser) inline() (*syntax.Node, error) {
-	n := object("inline")
+	n := p.object("inline")
 	n.Start = p.pos
 	p.pos++
 	if err := p.trivia(); err != nil {
@@ -596,7 +598,7 @@ func (p *parser) atom() (*syntax.Node, error) {
 		}
 		s = string(p.src[start:p.pos])
 	}
-	n := &syntax.Node{Start: start, End: p.pos}
+	n := p.arena.node(syntax.Node{Start: start, End: p.pos})
 	switch {
 	case s == "true" || s == "false":
 		n.Kind = syntax.Bool

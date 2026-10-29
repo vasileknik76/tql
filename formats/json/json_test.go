@@ -2,10 +2,12 @@ package json
 
 import (
 	stdjson "encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/vasileknik76/tql/syntax"
 )
@@ -169,6 +171,119 @@ func TestSurgicalInsert(t *testing.T) {
 			}
 			parse(t, string(out))
 		})
+	}
+}
+
+func TestParseRejectsDuplicateKeysInWideObjects(t *testing.T) {
+	build := func(entries int, duplicate string) string {
+		var source strings.Builder
+		source.WriteString("{")
+		for i := range entries {
+			fmt.Fprintf(&source, `"k%d":%d,`, i, i)
+		}
+		if duplicate != "" {
+			fmt.Fprintf(&source, `"%s":1`, duplicate)
+		} else {
+			source.WriteString(`"last":1`)
+		}
+		source.WriteString("}")
+		return source.String()
+	}
+	for _, entries := range []int{1, duplicateKeyMapThreshold - 1, duplicateKeyMapThreshold, duplicateKeyMapThreshold + 1, 40} {
+		if _, err := (Format{}).Parse([]byte(build(entries, ""))); err != nil {
+			t.Fatalf("%d unique keys: %v", entries, err)
+		}
+		if _, err := (Format{}).Parse([]byte(build(entries, "k0"))); err == nil || !strings.Contains(err.Error(), "duplicate object key") {
+			t.Fatalf("%d keys with repeated first key: err=%v", entries, err)
+		}
+		if _, err := (Format{}).Parse([]byte(build(entries, fmt.Sprintf("k%d", entries-1)))); err == nil || !strings.Contains(err.Error(), "duplicate object key") {
+			t.Fatalf("%d keys with repeated last key: err=%v", entries, err)
+		}
+	}
+}
+
+func TestParseArenaReturnsDistinctNodes(t *testing.T) {
+	var source strings.Builder
+	source.WriteString(`{"items":[`)
+	for i := range 3000 {
+		if i > 0 {
+			source.WriteString(",")
+		}
+		fmt.Fprintf(&source, `{"id":%d,"name":"n%d","tags":[1,2,3]}`, i, i)
+	}
+	source.WriteString(`]}`)
+	root := parse(t, source.String())
+	seen := map[*syntax.Node]bool{}
+	var walk func(*syntax.Node)
+	walk = func(n *syntax.Node) {
+		if n == nil || seen[n] {
+			return
+		}
+		seen[n] = true
+		for _, entry := range n.Entries {
+			if entry.Value == nil || entry.Value.Parent != n {
+				t.Fatalf("entry %q has no parent link", entry.Key)
+			}
+			walk(entry.Value)
+		}
+		for _, item := range n.Items {
+			if item == nil || item.Parent != n {
+				t.Fatal("item has no parent link")
+			}
+			walk(item)
+		}
+	}
+	walk(root)
+	if len(seen) < 3000*4 {
+		t.Fatalf("expected a large tree, walked %d nodes", len(seen))
+	}
+}
+
+func TestParseOwnedSharesSourceBytes(t *testing.T) {
+	source := []byte(`{"key":"value","number":123,"escaped":"a\nb"}`)
+	root, err := ParseOwned(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	within := func(s string) bool {
+		if len(s) == 0 {
+			return false
+		}
+		start := uintptr(unsafe.Pointer(&source[0]))
+		at := uintptr(unsafe.Pointer(unsafe.StringData(s)))
+		return at >= start && at < start+uintptr(len(source))
+	}
+	if !within(root.Entries[0].Key) {
+		t.Fatal("object key was copied instead of referencing the owned source")
+	}
+	if !within(string(root.Get("number").Value.(syntax.Number))) {
+		t.Fatal("number was copied instead of referencing the owned source")
+	}
+	if within(root.Get("escaped").Value.(string)) {
+		t.Fatal("escaped string must be decoded into its own buffer")
+	}
+
+	copied, err := (Format{}).Parse(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if within(copied.Entries[0].Key) {
+		t.Fatal("Parse must copy strings out of a caller-owned buffer")
+	}
+	if !reflect.DeepEqual(root.Interface(), copied.Interface()) {
+		t.Fatal("owned and copying parses disagree")
+	}
+
+	empty := []byte(`{"":"","list":[]}`)
+	ownedEmpty, err := ParseOwned(empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key := ownedEmpty.Entries[0].Key; key != "" {
+		t.Fatalf("empty key = %q", key)
+	}
+	if value, ok := ownedEmpty.Entries[0].Value.Value.(string); !ok || value != "" {
+		t.Fatalf("empty string value = %#v", ownedEmpty.Entries[0].Value.Value)
 	}
 }
 

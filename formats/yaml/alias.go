@@ -31,7 +31,7 @@ func (p *parser) beginAnchor(a anchorInfo) *syntax.Node {
 	if p.anchors == nil {
 		p.anchors = map[string]*syntax.Node{}
 	}
-	target := &syntax.Node{Start: a.end, End: a.end}
+	target := p.arena.node(syntax.Node{Start: a.end, End: a.end})
 	p.anchors[a.name] = target
 	return target
 }
@@ -57,10 +57,10 @@ func (p *parser) alias(a anchorInfo) (*syntax.Node, error) {
 	if target == nil {
 		return nil, errAt(a.start, "unknown or forward alias "+a.name)
 	}
-	return &syntax.Node{
+	return p.arena.node(syntax.Node{
 		Kind: syntax.Kind("yaml-alias"), Start: a.start, End: a.end, Style: "alias",
 		Meta: map[string]any{"aliasName": a.name, "aliasTarget": target},
-	}, nil
+	}), nil
 }
 func pending(n *syntax.Node) (anchorInfo, bool) {
 	a, ok := n.Meta["pendingAnchor"].(anchorInfo)

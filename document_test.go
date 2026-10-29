@@ -531,3 +531,78 @@ func FuzzExec(f *testing.F) {
 		assertQuery(t, d, `.`, d.Value())
 	})
 }
+
+// wrapperFormat embeds the JSON backend and overrides Parse, like a caller that
+// validates or instruments parsing.
+type wrapperFormat struct {
+	jsonformat.Format
+	parse int
+}
+
+func (f *wrapperFormat) Parse(source []byte) (*syntax.Node, error) {
+	f.parse++
+	return nil, fmt.Errorf("wrapper rejected the document")
+}
+
+func TestParseWithRespectsWrapperParse(t *testing.T) {
+	spy := &wrapperFormat{}
+	if _, err := tql.ParseWith([]byte(`{"a":1}`), spy); err == nil || !strings.Contains(err.Error(), "wrapper rejected") {
+		t.Fatalf("wrapper Parse was bypassed: err=%v", err)
+	}
+	if spy.parse != 1 {
+		t.Fatalf("wrapper Parse calls: %d", spy.parse)
+	}
+}
+
+// plainSpyFormat implements only the base Format interface.
+type plainSpyFormat struct {
+	inner jsonformat.Format
+	parse int
+}
+
+func (f *plainSpyFormat) Parse(source []byte) (*syntax.Node, error) {
+	f.parse++
+	return f.inner.Parse(source)
+}
+
+func (f *plainSpyFormat) Replace(source []byte, root, target *syntax.Node, value any) ([]syntax.Edit, error) {
+	return f.inner.Replace(source, root, target, value)
+}
+
+func (f *plainSpyFormat) Insert(source []byte, root, parent *syntax.Node, key string, value any) ([]syntax.Edit, error) {
+	return f.inner.Insert(source, root, parent, key, value)
+}
+
+func (f *plainSpyFormat) Delete(source []byte, root, target *syntax.Node) ([]syntax.Edit, error) {
+	return f.inner.Delete(source, root, target)
+}
+
+func TestParseWithFallsBackToParse(t *testing.T) {
+	spy := &plainSpyFormat{}
+	d, err := tql.ParseWith([]byte(`{"a":1}`), spy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spy.parse != 1 {
+		t.Fatalf("parse calls: %d", spy.parse)
+	}
+	assertQuery(t, d, `a`, tql.Number("1"))
+}
+
+func TestParseOwnedPathAvoidsStringCopies(t *testing.T) {
+	source := []byte(`{"k0":"v0","k1":"v1","k2":"v2","k3":"v3","k4":"v4","k5":"v5","k6":"v6","k7":"v7"}`)
+	backend := jsonformat.Format{}
+	copying := testing.AllocsPerRun(50, func() {
+		if _, err := backend.Parse(source); err != nil {
+			t.Fatal(err)
+		}
+	})
+	owned := testing.AllocsPerRun(50, func() {
+		if _, err := tql.Parse(source, "json"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if owned >= copying {
+		t.Fatalf("owned parse allocates %.1f, copying parse %.1f", owned, copying)
+	}
+}

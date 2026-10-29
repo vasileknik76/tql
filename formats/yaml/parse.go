@@ -32,6 +32,7 @@ type line struct {
 	inlineRoot               bool
 }
 type parser struct {
+	arena         nodeArena
 	src           []byte
 	lines         []line
 	i, depth      int
@@ -128,7 +129,7 @@ func parseDocuments(src []byte) ([]*syntax.Node, error) {
 			if p.i < len(p.lines) {
 				pos = p.lines[p.i].start
 			}
-			root = emptyScalar(pos)
+			root = emptyScalar(&p.arena, pos)
 		} else {
 			root, err = p.block(p.lines[p.i].indent, -1)
 			if err != nil {
@@ -225,8 +226,8 @@ func (p *parser) endMarker() error {
 	return nil
 }
 
-func emptyScalar(pos int) *syntax.Node {
-	return &syntax.Node{Kind: syntax.Null, Start: pos, End: pos, Style: "plain", Meta: map[string]any{"scalarValue": ""}}
+func emptyScalar(a *nodeArena, pos int) *syntax.Node {
+	return a.node(syntax.Node{Kind: syntax.Null, Start: pos, End: pos, Style: "plain", Meta: map[string]any{"scalarValue": ""}})
 }
 
 func marker(l line, s string) bool {
@@ -380,7 +381,7 @@ func (p *parser) mapping(indent, first int) (*syntax.Node, error) {
 	if p.depth > 256 {
 		return nil, errAt(p.lines[p.i].start, "nesting limit exceeded")
 	}
-	n := &syntax.Node{Kind: syntax.Object, Style: "block", Meta: map[string]any{"indent": indent}}
+	n := p.arena.node(syntax.Node{Kind: syntax.Object, Style: "block", Meta: map[string]any{"indent": indent}})
 	n.Start = -1
 	for {
 		p.skip()
@@ -423,7 +424,7 @@ func (p *parser) mapping(indent, first int) (*syntax.Node, error) {
 			}
 			var err error
 			if keyEnd == start {
-				keyNode = emptyScalar(start)
+				keyNode = emptyScalar(&p.arena, start)
 			} else if strings.ContainsRune("'\"&*![{", rune(p.src[start])) {
 				keyParser := &flow{p: p, pos: start, limit: keyEnd, depth: p.depth, minIndent: indent + 1}
 				keyNode, err = keyParser.node(false)
@@ -437,7 +438,7 @@ func (p *parser) mapping(indent, first int) (*syntax.Node, error) {
 				if strings.ContainsRune("@`%|>", rune(p.src[start])) {
 					return nil, errAt(start, "invalid mapping key indicator")
 				}
-				keyNode, err = scalar(string(p.src[start:keyEnd]), start, keyEnd)
+				keyNode, err = scalar(&p.arena, string(p.src[start:keyEnd]), start, keyEnd)
 				if err != nil {
 					return nil, err
 				}
@@ -470,7 +471,7 @@ func (p *parser) mapping(indent, first int) (*syntax.Node, error) {
 				}
 			} else {
 				position := p.extentEnd(keyEnd, l.next)
-				v = emptyScalar(position)
+				v = emptyScalar(&p.arena, position)
 				v.Meta["explicitMissingValue"], v.Meta["indent"] = true, indent
 			}
 		} else {
@@ -511,7 +512,7 @@ func (p *parser) mapping(indent, first int) (*syntax.Node, error) {
 			}
 		}
 		end := v.End
-		entry := &syntax.Entry{Key: key, KeyStart: keyStart, KeyEnd: keyEnd, Start: entryStart, End: end, Value: v, Meta: map[string]any{"lineStart": l.start, "lineEnd": l.next, "headerEnd": l.end}}
+		entry := p.arena.entry(syntax.Entry{Key: key, KeyStart: keyStart, KeyEnd: keyEnd, Start: entryStart, End: end, Value: v, Meta: map[string]any{"lineStart": l.start, "lineEnd": l.next, "headerEnd": l.end}})
 		if keyNode != nil {
 			entry.Meta["keyNode"] = keyNode
 		}
@@ -646,7 +647,7 @@ func (p *parser) sequence(indent int) (*syntax.Node, error) {
 	if p.depth > 256 {
 		return nil, errAt(p.lines[p.i].start, "nesting limit exceeded")
 	}
-	n := &syntax.Node{Kind: syntax.Array, Style: "block", Start: p.lines[p.i].start + indent, Meta: map[string]any{"indent": indent}}
+	n := p.arena.node(syntax.Node{Kind: syntax.Array, Style: "block", Start: p.lines[p.i].start + indent, Meta: map[string]any{"indent": indent}})
 	for {
 		p.skip()
 		if p.i >= len(p.lines) {
@@ -713,7 +714,7 @@ func (p *parser) value(start, end, indent int) (*syntax.Node, error) {
 		return nil, errAt(start, "property nesting limit exceeded")
 	}
 	if start >= end || p.src[start] == '#' {
-		return emptyScalar(start), nil
+		return emptyScalar(&p.arena, start), nil
 	}
 	if p.src[start] == '&' {
 		a, next, e := property(p.src, start, end)
@@ -725,7 +726,7 @@ func (p *parser) value(start, end, indent int) (*syntax.Node, error) {
 			next++
 		}
 		if next == end || p.src[next] == '#' {
-			return &syntax.Node{Kind: syntax.Null, Start: next, End: next, Meta: map[string]any{"pendingAnchor": a, "scalarValue": ""}}, nil
+			return p.arena.node(syntax.Node{Kind: syntax.Null, Start: next, End: next, Meta: map[string]any{"pendingAnchor": a, "scalarValue": ""}}), nil
 		}
 		n, e := p.value(next, end, indent)
 		if e != nil {
@@ -752,7 +753,7 @@ func (p *parser) value(start, end, indent int) (*syntax.Node, error) {
 			next++
 		}
 		if next == end || p.src[next] == '#' {
-			return &syntax.Node{Kind: syntax.Null, Start: next, End: next, Meta: map[string]any{"pendingTag": tag, "scalarValue": ""}}, nil
+			return p.arena.node(syntax.Node{Kind: syntax.Null, Start: next, End: next, Meta: map[string]any{"pendingTag": tag, "scalarValue": ""}}), nil
 		}
 		n, e := p.value(next, end, indent)
 		if e != nil {

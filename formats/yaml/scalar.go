@@ -2,32 +2,83 @@ package yaml
 
 import (
 	"math/big"
-	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/vasileknik76/tql/syntax"
 )
 
-var intRE = regexp.MustCompile(`^[+-]?[0-9]+$`)
-var floatRE = regexp.MustCompile(`^[+-]?([0-9]+\.[0-9]*|\.[0-9]+|[0-9]+)([eE][+-]?[0-9]+)?$`)
+// intLiteral and floatLiteral match the YAML plain-scalar number forms without
+// running a regular expression or allocating on every scalar.
+func intLiteral(s string) bool {
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		s = s[1:]
+	}
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
 
-func scalar(s string, start, end int) (*syntax.Node, error) {
-	n := &syntax.Node{Kind: syntax.String, Value: s, Start: start, End: end, Style: "plain", Meta: map[string]any{"scalarValue": s}}
+func floatLiteral(s string) bool {
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		s = s[1:]
+	}
+	digits := func(text string) int {
+		i := 0
+		for i < len(text) && text[i] >= '0' && text[i] <= '9' {
+			i++
+		}
+		return i
+	}
+	intPart := digits(s)
+	rest := s[intPart:]
+	if rest != "" && rest[0] == '.' {
+		frac := digits(rest[1:])
+		if intPart == 0 && frac == 0 {
+			return false
+		}
+		rest = rest[1+frac:]
+	} else if intPart == 0 {
+		return false
+	}
+	if rest == "" {
+		return true
+	}
+	if rest[0] != 'e' && rest[0] != 'E' {
+		return false
+	}
+	rest = rest[1:]
+	if rest != "" && (rest[0] == '+' || rest[0] == '-') {
+		rest = rest[1:]
+	}
+	return rest != "" && digits(rest) == len(rest)
+}
+
+func scalar(a *nodeArena, s string, start, end int) (*syntax.Node, error) {
+	kind, value := scalarKind(s)
+	return a.node(syntax.Node{Kind: kind, Value: value, Start: start, End: end, Style: "plain", Meta: map[string]any{"scalarValue": s}}), nil
+}
+
+// scalarKind classifies a plain scalar without building a node, so tag handling
+// can validate a typed scalar without allocating a tree element for it.
+func scalarKind(s string) (syntax.Kind, any) {
+	kind, value := syntax.String, any(s)
 	switch s {
 	case "~", "null", "Null", "NULL":
-		n.Kind = syntax.Null
-		n.Value = nil
+		kind, value = syntax.Null, nil
 	case "true", "True", "TRUE":
-		n.Kind = syntax.Bool
-		n.Value = true
+		kind, value = syntax.Bool, true
 	case "false", "False", "FALSE":
-		n.Kind = syntax.Bool
-		n.Value = false
+		kind, value = syntax.Bool, false
 	default:
 		if s == ".nan" || s == ".NaN" || s == ".NAN" || strings.EqualFold(strings.TrimPrefix(strings.TrimPrefix(s, "+"), "-"), ".inf") {
-			n.Kind = syntax.NumberKind
-			n.Value = syntax.Number(s)
-			return n, nil
+			return syntax.NumberKind, syntax.Number(s)
 		}
 		if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0o") {
 			base := 16
@@ -41,14 +92,16 @@ func scalar(s string, start, end int) (*syntax.Node, error) {
 			}
 			if digits != "" && strings.Trim(digits, allowed) == "" {
 				z, _ := new(big.Int).SetString(digits, base)
-				n.Kind = syntax.NumberKind
-				n.Value = syntax.Number(z.String())
+				kind, value = syntax.NumberKind, syntax.Number(z.String())
 			}
-		} else if intRE.MatchString(s) {
-			z, _ := new(big.Int).SetString(s, 10)
-			n.Kind = syntax.NumberKind
-			n.Value = syntax.Number(z.String())
-		} else if floatRE.MatchString(s) {
+		} else if intLiteral(s) {
+			if v, err := strconv.ParseInt(s, 10, 64); err == nil {
+				kind, value = syntax.NumberKind, syntax.Number(strconv.FormatInt(v, 10))
+			} else {
+				z, _ := new(big.Int).SetString(s, 10)
+				kind, value = syntax.NumberKind, syntax.Number(z.String())
+			}
+		} else if floatLiteral(s) {
 			x := strings.TrimPrefix(s, "+")
 			if strings.HasPrefix(x, ".") {
 				x = "0" + x
@@ -75,11 +128,10 @@ func scalar(s string, start, end int) (*syntax.Node, error) {
 			if negative {
 				mant = "-" + mant
 			}
-			n.Kind = syntax.NumberKind
-			n.Value = syntax.Number(mant + exp)
+			kind, value = syntax.NumberKind, syntax.Number(mant+exp)
 		}
 	}
-	return n, nil
+	return kind, value
 }
 func (p *parser) blockScalar(start, end, indent int) (*syntax.Node, error) {
 	head := string(p.src[start:end])
@@ -198,7 +250,7 @@ func (p *parser) blockScalar(start, end, indent int) (*syntax.Node, error) {
 			value += "\n"
 		}
 	}
-	return &syntax.Node{Kind: syntax.String, Value: value, Start: start, End: last, Style: "block-scalar", Meta: map[string]any{"indent": indent, "headerEnd": end, "scalarValue": value}}, nil
+	return p.arena.node(syntax.Node{Kind: syntax.String, Value: value, Start: start, End: last, Style: "block-scalar", Meta: map[string]any{"indent": indent, "headerEnd": end, "scalarValue": value}}), nil
 }
 
 func moreIndented(s string) bool {

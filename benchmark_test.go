@@ -129,6 +129,23 @@ func BenchmarkWideObjectParse(b *testing.B) {
 	}
 }
 
+func BenchmarkYAMLParse(b *testing.B) {
+	var source strings.Builder
+	source.WriteString("services:\n")
+	for i := range 200 {
+		fmt.Fprintf(&source, "  - name: svc%d\n    port: %d\n    enabled: %t\n    tags: [a, b, c]\n", i, 8000+i, i%3 != 0)
+	}
+	data := []byte(source.String())
+	b.ReportAllocs()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := tql.Parse(data, "yaml"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkScriptForLoop(b *testing.B) {
 	var source strings.Builder
 	source.WriteString(`{"items":[`)

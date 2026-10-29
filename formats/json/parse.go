@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/vasileknik76/tql/internal/scan"
 	"github.com/vasileknik76/tql/syntax"
@@ -21,14 +22,84 @@ type Format struct{}
 var _ syntax.Format = Format{}
 
 type parser struct {
-	source []byte
-	pos    int
+	source  []byte
+	pos     int
+	nodes   []syntax.Node
+	entries []syntax.Entry
+	owned   bool
+}
+
+// arenaSize bounds one block of nodes or entries. Trees keep individual elements
+// alive, so blocks never need to be tracked separately.
+const arenaSize = 1024
+
+// nextBlock doubles a block up to arenaSize, so short parses stay small while
+// large documents reach full blocks after a few allocations.
+func nextBlock(current int) int {
+	if current == 0 {
+		return 16
+	}
+	return min(current*2, arenaSize)
+}
+
+// duplicateKeyMapThreshold is the entry count above which duplicate key checks
+// switch from a linear scan to a map.
+const duplicateKeyMapThreshold = 16
+
+func (p *parser) newNode(start int) *syntax.Node {
+	if len(p.nodes) == cap(p.nodes) {
+		p.nodes = make([]syntax.Node, 0, nextBlock(cap(p.nodes)))
+	}
+	p.nodes = append(p.nodes, syntax.Node{Start: start})
+	return &p.nodes[len(p.nodes)-1]
+}
+
+func (p *parser) newEntry() *syntax.Entry {
+	if len(p.entries) == cap(p.entries) {
+		p.entries = make([]syntax.Entry, 0, nextBlock(cap(p.entries)))
+	}
+	p.entries = append(p.entries, syntax.Entry{})
+	return &p.entries[len(p.entries)-1]
+}
+
+// addKey rejects duplicate object keys. Small objects are scanned linearly;
+// only wide objects pay for a lookup map, which is built once and reused.
+func (p *parser) addKey(n *syntax.Node, key string, seen map[string]bool) (map[string]bool, error) {
+	if len(n.Entries) < duplicateKeyMapThreshold {
+		for _, entry := range n.Entries {
+			if entry.Key == key {
+				return seen, p.fail("duplicate object key " + strconv.Quote(key))
+			}
+		}
+		return seen, nil
+	}
+	if seen == nil {
+		seen = make(map[string]bool, len(n.Entries)+1)
+		for _, entry := range n.Entries {
+			seen[entry.Key] = true
+		}
+	}
+	if seen[key] {
+		return seen, p.fail("duplicate object key " + strconv.Quote(key))
+	}
+	seen[key] = true
+	return seen, nil
 }
 
 // Parse reads one JSON value, surrounded only by JSON whitespace. Numbers retain
 // their exact decimal spelling, including exponent and negative-zero notation.
 func (Format) Parse(source []byte) (*syntax.Node, error) {
-	p := &parser{source: source}
+	return parseSource(source, false)
+}
+
+// ParseOwned parses a buffer that the caller keeps immutable for the lifetime of
+// the tree. Decoded strings then reference the buffer instead of copying it.
+func ParseOwned(source []byte) (*syntax.Node, error) {
+	return parseSource(source, true)
+}
+
+func parseSource(source []byte, owned bool) (*syntax.Node, error) {
+	p := &parser{source: source, owned: owned}
 	if !utf8.Valid(source) {
 		return nil, p.fail("invalid UTF-8")
 	}
@@ -77,13 +148,13 @@ func (p *parser) value(depth int) (*syntax.Node, error) {
 		return nil, p.fail("expected a value")
 	}
 	start := p.pos
-	n := &syntax.Node{Start: start}
+	n := p.newNode(start)
 	switch p.source[p.pos] {
 	case '{':
 		n.Kind = syntax.Object
 		p.pos++
 		p.space()
-		seen := map[string]bool{}
+		var seen map[string]bool
 		if p.take('}') {
 			break
 		}
@@ -97,10 +168,10 @@ func (p *parser) value(depth int) (*syntax.Node, error) {
 				return nil, err
 			}
 			keyEnd := p.pos
-			if seen[key] {
-				return nil, p.fail("duplicate object key " + strconv.Quote(key))
+			seen, err = p.addKey(n, key, seen)
+			if err != nil {
+				return nil, err
 			}
-			seen[key] = true
 			p.space()
 			if !p.take(':') {
 				return nil, p.fail("expected ':' after object key")
@@ -110,7 +181,10 @@ func (p *parser) value(depth int) (*syntax.Node, error) {
 			if err != nil {
 				return nil, err
 			}
-			n.Entries = append(n.Entries, &syntax.Entry{Key: key, KeyStart: keyStart, KeyEnd: keyEnd, Start: keyStart, End: p.pos, Value: child})
+			entry := p.newEntry()
+			entry.Key, entry.KeyStart, entry.KeyEnd = key, keyStart, keyEnd
+			entry.Start, entry.End, entry.Value = keyStart, p.pos, child
+			n.Entries = append(n.Entries, entry)
 			p.space()
 			if p.take('}') {
 				break
@@ -174,10 +248,20 @@ func (p *parser) value(depth int) (*syntax.Node, error) {
 			return nil, err
 		}
 		n.Kind = syntax.NumberKind
-		n.Value = syntax.Number(p.source[start:p.pos])
+		n.Value = syntax.Number(p.text(start, p.pos))
 	}
 	n.End = p.pos
 	return n, nil
+}
+
+// text returns the source slice as a string. A caller that owns the buffer keeps
+// it immutable, so the string can share its bytes; otherwise they are copied.
+func (p *parser) text(start, end int) string {
+	slice := p.source[start:end]
+	if !p.owned {
+		return string(slice)
+	}
+	return unsafe.String(unsafe.SliceData(slice), len(slice))
 }
 
 func (p *parser) take(b byte) bool {
@@ -241,9 +325,7 @@ func (p *parser) string() (string, error) {
 		return "", p.fail("unterminated string")
 	}
 	if p.source[p.pos] == '"' {
-		// Copy once. The tree must own its strings independently of the
-		// caller's mutable source bytes.
-		s := string(p.source[start:p.pos])
+		s := p.text(start, p.pos)
 		p.pos++
 		return s, nil
 	}

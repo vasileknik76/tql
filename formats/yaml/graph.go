@@ -172,7 +172,7 @@ func (b *graphBuilder) node(source *syntax.Node) (*Node, error) {
 				node.Tag = "tag:yaml.org,2002:bool"
 			case syntax.NumberKind:
 				name := "float"
-				if intRE.MatchString(string(source.Value.(syntax.Number))) {
+				if intLiteral(string(source.Value.(syntax.Number))) {
 					name = "int"
 				}
 				node.Tag = "tag:yaml.org,2002:" + name

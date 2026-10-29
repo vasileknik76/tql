@@ -29,6 +29,7 @@ func projectDocument(source []byte) (*syntax.Node, error) {
 }
 
 type queryProjection struct {
+	arena      nodeArena
 	source     []byte
 	active     map[*syntax.Node]bool
 	aliasNodes int
@@ -66,7 +67,9 @@ func (p *queryProjection) node(source *syntax.Node, depth int, alias *segment) (
 			return nil, errAt(alias.start, "alias expansion limit exceeded")
 		}
 	}
-	out := &syntax.Node{Kind: source.Kind, Value: source.Value, Start: source.Start, End: source.End, Style: source.Style, Meta: maps.Clone(source.Meta)}
+	// Meta is written only while parsing; the projected tree shares it with the
+	// raw tree instead of copying a map into every node and entry.
+	out := p.arena.node(syntax.Node{Kind: source.Kind, Value: source.Value, Start: source.Start, End: source.End, Style: source.Style, Meta: source.Meta})
 	if source.Kind == syntax.Object || source.Kind == syntax.Array {
 		depth++
 		if depth > 256 {
@@ -97,7 +100,7 @@ func (p *queryProjection) node(source *syntax.Node, depth int, alias *segment) (
 		if err != nil {
 			return nil, err
 		}
-		projected := &syntax.Entry{Key: key, KeyStart: entry.KeyStart, KeyEnd: entry.KeyEnd, Start: entry.Start, End: entry.End, Value: child, Meta: maps.Clone(entry.Meta)}
+		projected := p.arena.entry(syntax.Entry{Key: key, KeyStart: entry.KeyStart, KeyEnd: entry.KeyEnd, Start: entry.Start, End: entry.End, Value: child, Meta: entry.Meta})
 		if alias != nil {
 			projected.KeyStart, projected.KeyEnd = alias.start, alias.end
 			projected.Start, projected.End, projected.Meta = alias.start, alias.end, nil
@@ -154,7 +157,7 @@ func (p *queryProjection) key(entry *syntax.Entry) (string, error) {
 	if key.Kind == syntax.Array || key.Kind == syntax.Object {
 		return "", errAt(entry.KeyStart, "complex YAML mapping keys cannot be queried; use ParseStream")
 	}
-	projected := &syntax.Node{Kind: key.Kind, Value: key.Value, Start: key.Start, End: key.End, Style: key.Style, Meta: maps.Clone(key.Meta)}
+	projected := p.arena.node(syntax.Node{Kind: key.Kind, Value: key.Value, Start: key.Start, End: key.End, Style: key.Style, Meta: key.Meta})
 	if err := p.construct(projected); err != nil {
 		return "", err
 	}
