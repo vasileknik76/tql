@@ -31,6 +31,16 @@ func ParseWith(source []byte, format Format, options ...ParseOption) (*Document,
 		return nil, errors.New("format returned a nil tree")
 	}
 	syntax.Link(root)
+	if versioned, ok := format.(syntax.VersionedFormat); ok {
+		configured, err := configureVersion(format, versioned.Version(root))
+		if err != nil {
+			return nil, err
+		}
+		// A promoted WithVersion may discard a wrapper's parsing or editing policy.
+		if versionPreservesFormat(format, configured) {
+			format = configured
+		}
+	}
 	return &Document{source: src, root: root, format: format}, nil
 }
 

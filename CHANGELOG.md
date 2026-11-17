@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Default TOML generation to 1.0, detecting 1.1 features in existing input.
+  Add strict target versions through `tql.WithVersion` and CLI `--format-version`;
+  incompatible input and edits fail without changing the document.
+
 - Cut parser allocations: all three formats allocate tree nodes and object
   entries in blocks, JSON skips the per-object duplicate-key map for small
   objects, YAML projection shares node metadata with the parsed tree, and

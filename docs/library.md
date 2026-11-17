@@ -92,6 +92,33 @@ source. Invalid styles and unsupported format combinations return errors.
 See [generation style](style.md) for all fields, format constraints, inference
 rules, and the configuration design.
 
+## Format versions
+
+`Parse`, `ParseWith`, `Registry.Parse`, and `Eval` accept `tql.WithVersion`.
+For TOML, the default (`""` or `"auto"`) starts at 1.0 and selects 1.1 only
+when the input uses a 1.1 feature. The selected target stays fixed for the
+document's lifetime, including after removal of the feature that selected it.
+
+```go
+doc, err := tql.Parse(source, "toml", tql.WithVersion("1.0"))
+```
+
+Explicit `"1.0"` and `"1.1"` targets are strict: incompatible input fails to
+parse, and incompatible inserted or replaced values fail atomically. For example,
+`tql.Temporal("14:00")` requires 1.1; use `tql.Temporal("14:00:00")` with 1.0.
+Versions do not reformat or downgrade existing source. Style and version options
+can be combined in either order. The last version option wins. Unsupported
+versions and explicit versions for JSON/YAML return errors.
+
+Custom backends can implement the optional `syntax.VersionedFormat` interface.
+`WithVersion` configures an independent backend, and `Version(root)` returns the
+explicit or detected target; TQL pins that target before executing edits.
+Wrappers must override `WithVersion` and return their own backend type, preserving
+custom parsing and editing methods. An inherited factory that unwraps the backend
+is ignored during automatic pinning and rejected for an explicit `WithVersion`
+option. Without a wrapper-preserving factory, automatic version detection follows
+the current source instead of keeping a fixed target across edits.
+
 ## Reuse a compiled program
 
 The following fragment assumes `inputs` is a `[][]byte` and the enclosing function
@@ -239,6 +266,7 @@ result, err := tql.Eval(source, "yaml", script,
 | Option | `Parse` / `ParseWith` / `Registry.Parse` | `Exec` / `Execute` / `Query` | `Eval` |
 | --- | --- | --- | --- |
 | `WithStyle` | Yes | No | Yes |
+| `WithVersion` | Yes | No | Yes |
 | `WithParams` | No | Yes | Yes |
 
 The option interfaces enforce this distinction at compile time: `ParseOption`

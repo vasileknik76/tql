@@ -1,0 +1,24 @@
+=== auto ===
+target: 1.1
+--- insert object ---
+value = "\e"
+
+[added]
+enabled = false
+--- insert time without seconds ---
+value = "\e"
+added_time = 14:00
+
+=== 1.0 ===
+parse error: toml:1:12: \e escape requires TOML 1.1; target is 1.0
+
+=== 1.1 ===
+target: 1.1
+--- insert object ---
+value = "\e"
+
+[added]
+enabled = false
+--- insert time without seconds ---
+value = "\e"
+added_time = 14:00

@@ -33,6 +33,7 @@ Examples:
 
 Options:
   -f, --format NAME     Input format: json, toml, yaml (yml)
+      --format-version V Target syntax: auto (default), 1.0 or 1.1 (TOML)
       --style STYLE     New collections: auto, block, flow (default auto)
       --object-style S  New objects: auto, block, flow, dotted (TOML)
       --array-style S   New arrays: auto, block, flow
@@ -66,6 +67,7 @@ func run(args []string, in io.Reader, out, stderr io.Writer) int {
 	fs := flag.NewFlagSet("tql", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var format, queryFile, programFile, assembleFile, emitBytecode, emitAssembly string
+	var formatVersion string
 	var disassemble bool
 	var parameters parameterFlags
 	var style tql.Style
@@ -81,6 +83,7 @@ func run(args []string, in io.Reader, out, stderr io.Writer) int {
 	fs.StringVar(&style.LineEnding, "line-ending", "auto", "new line endings")
 	fs.StringVar(&format, "f", "", "input format")
 	fs.StringVar(&format, "format", "", "input format")
+	fs.StringVar(&formatVersion, "format-version", "auto", "target format version")
 	fs.BoolVar(&inPlace, "i", false, "edit in place")
 	fs.BoolVar(&inPlace, "in-place", false, "edit in place")
 	fs.BoolVar(&raw, "r", false, "raw read strings")
@@ -289,7 +292,7 @@ func run(args []string, in io.Reader, out, stderr io.Writer) int {
 		}
 		style.Indent = strings.Repeat(" ", n)
 	}
-	doc, err := tql.Parse(source, format, tql.WithStyle(style))
+	doc, err := tql.Parse(source, format, tql.WithStyle(style), tql.WithVersion(formatVersion))
 	if err != nil {
 		return fail(err)
 	}

@@ -25,6 +25,11 @@ func TestCLI(t *testing.T) {
 		{"read", []string{"-f", "json", "a"}, `{"a":42}`, "42\n", 0},
 		{"raw", []string{"-f", "yaml", "-r", "name"}, "name: 'Никита' # keep\n", "Никита\n", 0},
 		{"mutation", []string{"-f", "toml", "a = 2"}, "a = 1 # keep\n", "a = 2 # keep\n", 0},
+		{"version auto", []string{"-f", "toml", "copy=time"}, "time=14:00\n", "time=14:00\ncopy=14:00\n", 0},
+		{"version strict", []string{"-f", "toml", "--format-version", "1.0", "."}, "time=14:00\n", "", 2},
+		{"version new", []string{"-f", "toml", "--format-version", "1.1", "copy=time"}, "time=14:00\n", "time=14:00\ncopy=14:00\n", 0},
+		{"version unknown", []string{"-f", "toml", "--format-version", "1.2", "."}, "a=1\n", "", 2},
+		{"version unsupported", []string{"-f", "json", "--format-version", "1.0", "."}, "{}", "", 2},
 		{"stream", []string{"-f", "json", "a[] | select(.n > 1) | .n"}, `{"a":[{"n":1},{"n":2},{"n":3}]}`, "2\n3\n", 0},
 		{"values", []string{"-f", "json", "--values", "a = 2; a"}, `{"a":1}`, "2\n", 0},
 		{"check changed", []string{"-f", "json", "--check", "a = 2"}, `{"a":1}`, "", 1},
@@ -105,6 +110,22 @@ func TestInPlace(t *testing.T) {
 	leftovers, _ := filepath.Glob(filepath.Join(dir, ".tql-*"))
 	if len(leftovers) != 0 {
 		t.Fatalf("leftover temp files: %v", leftovers)
+	}
+}
+
+func TestStrictVersionInPlace(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "config.toml")
+	source := []byte("time=14:00\n")
+	if err := os.WriteFile(file, source, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, diagnostic := invoke([]string{"--format-version", "1.0", "-i", "time=1", file}, "")
+	if code != 2 || out != "" || !strings.Contains(diagnostic, "requires TOML 1.1") {
+		t.Fatalf("code=%d out=%q diagnostic=%s", code, out, diagnostic)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil || !bytes.Equal(got, source) {
+		t.Fatalf("failed validation changed input: %q, %v", got, err)
 	}
 }
 func TestFileOptions(t *testing.T) {

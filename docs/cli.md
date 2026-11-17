@@ -79,6 +79,7 @@ YAML documents.
 | Flag | Meaning |
 | --- | --- |
 | `-f`, `--format NAME` | Input format: `json`, `toml`, `yaml`, or `yml` |
+| `--format-version V` | TOML target: `auto` (default), strict `1.0`, or strict `1.1` |
 | `--style STYLE` | New collections: `auto` (default), `block`, `flow` |
 | `--object-style STYLE` | New objects: `auto`, `block`, `flow`, `dotted` (TOML) |
 | `--array-style STYLE` | New arrays: `auto`, `block`, `flow` |

@@ -2,6 +2,7 @@
 * text=auto eol=lf
 /integration/testdata/** -text whitespace=cr-at-eol
 /formats/*/testdata/fuzz/** -text
+/formats/toml/testdata/versions/** -text
 /conformance/testdata/** -text -whitespace
 /examples/config.* -text
 /examples/bytecode/*.tqlc -text
