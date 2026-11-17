@@ -15,21 +15,45 @@ import (
 )
 
 func TestTOMLTestSuite(t *testing.T) {
-	const root = "testdata/toml/"
-	files := strings.Fields(string(read(t, root+"files-toml-1.1.0")))
-	if len(files) != 895 {
-		t.Fatalf("incomplete TOML 1.1 manifest: got %d entries, want 895", len(files))
+	for _, suite := range []struct {
+		name, version, manifest string
+		entries, valid, invalid int
+	}{
+		{"auto", "auto", "1.1.0", 895, 214, 467},
+		{"1.0", "1.0", "1.0.0", 884, 205, 474},
+		{"1.1", "1.1", "1.1.0", 895, 214, 467},
+	} {
+		t.Run(suite.name, func(t *testing.T) {
+			backend, err := (toml.Format{}).WithVersion(suite.version)
+			if err != nil {
+				t.Fatal(err)
+			}
+			testTOMLCorpus(t, backend, suite.manifest, suite.entries, suite.valid, suite.invalid)
+		})
 	}
-	cases := 0
+}
+
+func testTOMLCorpus(t *testing.T, backend syntax.Format, version string, entries, valid, invalid int) {
+	t.Helper()
+	const root = "testdata/toml/"
+	files := strings.Fields(string(read(t, root+"files-toml-"+version)))
+	if len(files) != entries {
+		t.Fatalf("incomplete TOML %s manifest: got %d entries, want %d", version, len(files), entries)
+	}
+	validCases, invalidCases := 0, 0
 	for _, file := range files {
 		if !strings.HasSuffix(file, ".toml") {
 			continue
 		}
-		cases++
+		if strings.HasPrefix(file, "invalid/") {
+			invalidCases++
+		} else {
+			validCases++
+		}
 		t.Run(file, func(t *testing.T) {
 			source := read(t, root+file)
 			original := bytes.Clone(source)
-			doc, err := (toml.Format{}).Parse(source)
+			doc, err := backend.Parse(source)
 			if !bytes.Equal(source, original) {
 				t.Fatal("parser mutated source")
 			}
@@ -51,8 +75,8 @@ func TestTOMLTestSuite(t *testing.T) {
 			}
 		})
 	}
-	if cases != 681 {
-		t.Fatalf("incomplete TOML 1.1 corpus: got %d cases, want 681", cases)
+	if validCases != valid || invalidCases != invalid {
+		t.Fatalf("incomplete TOML %s corpus: got %d valid and %d invalid, want %d and %d", version, validCases, invalidCases, valid, invalid)
 	}
 }
 

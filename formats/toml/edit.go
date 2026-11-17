@@ -246,6 +246,9 @@ func insertion(src []byte, root, parent *syntax.Node, key string, value any, pol
 
 // Insert plans a missing object member or an array append.
 func (f Format) Insert(src []byte, root, parent *syntax.Node, key string, value any) ([]syntax.Edit, error) {
+	if err := validateValueVersion(value, f.Version(root), 0); err != nil {
+		return nil, err
+	}
 	if root == nil || parent == nil {
 		return nil, fmt.Errorf("toml: invalid insertion target")
 	}
@@ -463,6 +466,9 @@ func removeInlineSyntax(src []byte, edits []syntax.Edit) []syntax.Edit {
 
 // Replace plans replacement of a selected value.
 func (f Format) Replace(src []byte, root, target *syntax.Node, value any) ([]syntax.Edit, error) {
+	if err := validateValueVersion(value, f.Version(root), 0); err != nil {
+		return nil, err
+	}
 	if root == nil || target == nil || target.Start >= 0 && (target.End < target.Start || target.End > len(src)) {
 		return nil, fmt.Errorf("toml: invalid replacement target")
 	}

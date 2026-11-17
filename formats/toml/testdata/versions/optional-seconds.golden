@@ -1,0 +1,32 @@
+=== auto ===
+target: 1.1
+--- insert object ---
+value = 14:00
+local = 1979-05-27 07:32
+offset = 1979-05-27T07:32-07:00
+
+[added]
+enabled = false
+--- insert time without seconds ---
+value = 14:00
+local = 1979-05-27 07:32
+offset = 1979-05-27T07:32-07:00
+added_time = 14:00
+
+=== 1.0 ===
+parse error: toml:1:14: omitted seconds requires TOML 1.1; target is 1.0
+
+=== 1.1 ===
+target: 1.1
+--- insert object ---
+value = 14:00
+local = 1979-05-27 07:32
+offset = 1979-05-27T07:32-07:00
+
+[added]
+enabled = false
+--- insert time without seconds ---
+value = 14:00
+local = 1979-05-27 07:32
+offset = 1979-05-27T07:32-07:00
+added_time = 14:00

@@ -1,0 +1,32 @@
+=== auto ===
+target: 1.1
+--- insert object ---
+value = {
+  enabled = true
+}
+added = {
+  enabled = false
+}
+--- insert time without seconds ---
+value = {
+  enabled = true
+}
+added_time = 14:00
+
+=== 1.0 ===
+parse error: toml:1:10: newline in inline table requires TOML 1.1; target is 1.0
+
+=== 1.1 ===
+target: 1.1
+--- insert object ---
+value = {
+  enabled = true
+}
+added = {
+  enabled = false
+}
+--- insert time without seconds ---
+value = {
+  enabled = true
+}
+added_time = 14:00

@@ -4,6 +4,13 @@
 [TOML 1.1](https://toml.io/en/v1.1.0) parser and source-preserving edits. It has no
 third-party runtime dependencies.
 
+Generation defaults to TOML 1.0. Parsing detects features requiring 1.1 and
+allows them for subsequent edits of that document. `tql.WithVersion("1.0")`
+and CLI `--format-version 1.0` strictly reject newer input and generated values;
+`1.1` explicitly permits them. Empty or `auto` selects detection. Existing source
+is never downgraded. The backend's `WithVersion` and `Version(root)` implement
+the optional `syntax.VersionedFormat` interface.
+
 ## Supported syntax
 
 The parser supports quoted and dotted keys, implicit and explicit tables, arrays
@@ -95,9 +102,24 @@ see [architecture](../../docs/architecture.md).
 
 ## Conformance checks
 
-All 681 TOML 1.1 parser cases from `toml-lang/toml-test` v2.2.0 are pinned in
-`conformance/testdata/toml` and run in `go test ./...` and CI. Valid inputs are
+The 679 TOML 1.0 and 681 TOML 1.1 parser cases from `toml-lang/toml-test` v2.2.0
+are pinned in `conformance/testdata/toml` and run in `go test ./...` and CI.
+Each strict target uses its version's upstream manifest; auto uses the 1.1 corpus.
+Valid inputs are
 compared with the upstream typed JSON values, including integer/float distinctions,
 negative zero, special floats, and local/offset temporal types. Invalid inputs must
 return an error without a partial tree. No downloads or Python are needed.
 See [parser conformance](../../conformance/README.md) for details.
+
+Version golden tests pair each input in `testdata/versions/*.toml` with a
+`.golden` file showing all three targets: auto, strict 1.0, and strict 1.1.
+They record the selected version, exact generated object/time bytes, and errors.
+Examples: [conservative input](testdata/versions/conservative.golden),
+[1.1 inline table](testdata/versions/inline-newline.golden), and
+[a multiline array inside a 1.0 inline table](testdata/versions/nested-multiline-array.golden).
+Expected files are reviewed and edited explicitly; tests never rewrite them.
+
+```sh
+go test ./formats/toml -run '^TestVersionGolden$' -count=1
+go test ./conformance -run '^TestTOMLTestSuite$' -count=1
+```

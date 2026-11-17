@@ -1,0 +1,32 @@
+=== auto ===
+target: 1.0
+--- insert object ---
+value = { text = '''
+hello
+''' }
+added = { enabled = false }
+--- insert time without seconds ---
+error: toml: omitted seconds requires TOML 1.1; target is 1.0
+
+=== 1.0 ===
+target: 1.0
+--- insert object ---
+value = { text = '''
+hello
+''' }
+added = { enabled = false }
+--- insert time without seconds ---
+error: toml: omitted seconds requires TOML 1.1; target is 1.0
+
+=== 1.1 ===
+target: 1.1
+--- insert object ---
+value = { text = '''
+hello
+''' }
+added = { enabled = false }
+--- insert time without seconds ---
+value = { text = '''
+hello
+''' }
+added_time = 14:00

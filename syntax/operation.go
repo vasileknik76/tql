@@ -157,7 +157,7 @@ func normalizeFloat(v float64, bits int) (any, error) {
 	return Number(strconv.FormatFloat(v, 'g', -1, bits)), nil
 }
 
-var temporalPattern = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}([Tt ]\d{2}:\d{2}:\d{2}(\.[0-9]+)?([Zz]|[+-]\d{2}:\d{2})?)?|\d{2}:\d{2}:\d{2}(\.[0-9]+)?)$`)
+var temporalPattern = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}([Tt ]\d{2}:\d{2}(:\d{2}(\.[0-9]+)?)?([Zz]|[+-]\d{2}:\d{2})?)?|\d{2}:\d{2}(:\d{2}(\.[0-9]+)?)?)$`)
 
 func validTemporal(s string) bool {
 	if !temporalPattern.MatchString(s) {
@@ -170,6 +170,13 @@ func validTemporal(s string) bool {
 		}
 	}
 	s = strings.NewReplacer("t", "T", "z", "Z", " ", "T").Replace(s)
+	clock := 0
+	if len(s) > 10 && s[10] == 'T' {
+		clock = 11
+	}
+	if len(s) >= clock+5 && s[clock+2] == ':' && (len(s) == clock+5 || s[clock+5] != ':') {
+		s = s[:clock+5] + ":00" + s[clock+5:]
+	}
 	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999", "2006-01-02", "15:04:05.999999999"} {
 		if _, err := time.Parse(layout, s); err == nil {
 			return true

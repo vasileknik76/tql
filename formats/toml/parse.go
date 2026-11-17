@@ -14,7 +14,10 @@ import (
 )
 
 // Format parses and edits TOML documents without reformatting untouched source.
-type Format struct{ style syntax.Style }
+type Format struct {
+	style   syntax.Style
+	version string
+}
 
 // WithStyle returns an independent backend with an explicit generation policy.
 func (f Format) WithStyle(style syntax.Style) (syntax.Format, error) {
@@ -34,6 +37,8 @@ type parser struct {
 	root, current *syntax.Node
 	depth         int
 	entries       map[*syntax.Node]map[string]*syntax.Node
+	version       string
+	minimum       string
 }
 
 func (p *parser) object(style string) *syntax.Node {
@@ -108,11 +113,11 @@ func (p *parser) trivia() error {
 
 // Parse reads one document and returns a linked, source-aware syntax tree.
 // It does not modify source.
-func (Format) Parse(src []byte) (*syntax.Node, error) {
+func (f Format) Parse(src []byte) (*syntax.Node, error) {
 	if !utf8.Valid(src) {
 		return nil, fmt.Errorf("toml: invalid UTF-8")
 	}
-	p := &parser{src: src, entries: make(map[*syntax.Node]map[string]*syntax.Node)}
+	p := &parser{src: src, entries: make(map[*syntax.Node]map[string]*syntax.Node), version: f.version, minimum: "1.0"}
 	p.root = p.object("table")
 	p.current = p.root
 	for {
@@ -156,6 +161,9 @@ func (Format) Parse(src []byte) (*syntax.Node, error) {
 		}
 	}
 	syntax.Link(p.root)
+	if p.minimum != "1.0" {
+		p.root.Meta["version"] = p.minimum
+	}
 	return p.root, nil
 }
 func (p *parser) keypath() ([]string, int, int, error) {
@@ -418,6 +426,9 @@ func (p *parser) stringValue() (*syntax.Node, error) {
 			case 'r':
 				b.WriteByte('\r')
 			case 'e':
+				if err := p.useFeature(escapeEscape); err != nil {
+					return nil, err
+				}
 				b.WriteByte(0x1b)
 			case '"', '\\':
 				b.WriteByte(e)
@@ -425,6 +436,9 @@ func (p *parser) stringValue() (*syntax.Node, error) {
 				count := 4
 				switch e {
 				case 'x':
+					if err := p.useFeature(hexEscape); err != nil {
+						return nil, err
+					}
 					count = 2
 				case 'U':
 					count = 8
@@ -498,7 +512,7 @@ func (p *parser) inline() (*syntax.Node, error) {
 	n := p.object("inline")
 	n.Start = p.pos
 	p.pos++
-	if err := p.trivia(); err != nil {
+	if err := p.inlineTrivia(n); err != nil {
 		return nil, err
 	}
 	if p.peek() == '}' {
@@ -524,7 +538,7 @@ func (p *parser) inline() (*syntax.Node, error) {
 		if e = p.assign(n, keys, v, ks, ke, start, p.pos); e != nil {
 			return nil, e
 		}
-		if err := p.trivia(); err != nil {
+		if err := p.inlineTrivia(n); err != nil {
 			return nil, err
 		}
 		if p.peek() == '}' {
@@ -536,10 +550,13 @@ func (p *parser) inline() (*syntax.Node, error) {
 			return nil, p.err("expected comma or }")
 		}
 		p.pos++
-		if err := p.trivia(); err != nil {
+		if err := p.inlineTrivia(n); err != nil {
 			return nil, err
 		}
 		if p.peek() == '}' {
+			if err := p.useFeature(inlineTrailingComma); err != nil {
+				return nil, err
+			}
 			p.pos++
 			n.End = p.pos
 			return n, nil
@@ -606,6 +623,11 @@ func (p *parser) atom() (*syntax.Node, error) {
 	case temporalRE.MatchString(s):
 		if !validTime(s) {
 			return nil, p.err("invalid date/time")
+		}
+		if omittedSeconds(s) {
+			if err := p.useFeature(optionalSeconds); err != nil {
+				return nil, err
+			}
 		}
 		n.Kind = syntax.Datetime
 		n.Value = syntax.Temporal(s)

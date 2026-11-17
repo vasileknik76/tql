@@ -3,6 +3,9 @@
 `go test ./...` runs the pinned upstream parser corpora without network access,
 Python, external executables, submodules, or third-party Go dependencies. CI runs
 them on every OS/Go test-matrix entry, including its race-enabled entries.
+The named `TOML version golden tests and reference suites (1.0, 1.1, auto)` step
+also runs the version goldens and both TOML reference corpora explicitly, with
+the test cache disabled.
 
 ```sh
 make conformance
@@ -20,7 +23,7 @@ including invalid UTF-8, CRLF, BOMs, tabs, and intentionally malformed documents
 
 | Directory | Upstream | Pinned revision | Cases |
 | --- | --- | --- | ---: |
-| `testdata/toml` | [toml-lang/toml-test v2.2.0](https://github.com/toml-lang/toml-test/tree/ce08da1ddb075d1c7596d663c7fcba9a2ae02c5c) | `ce08da1ddb075d1c7596d663c7fcba9a2ae02c5c` | 681 |
+| `testdata/toml` | [toml-lang/toml-test v2.2.0](https://github.com/toml-lang/toml-test/tree/ce08da1ddb075d1c7596d663c7fcba9a2ae02c5c) | `ce08da1ddb075d1c7596d663c7fcba9a2ae02c5c` | 679 (1.0), 681 (1.1) |
 | `testdata/yaml` | [yaml/yaml-test-suite data-2022-01-17](https://github.com/yaml/yaml-test-suite/tree/6e6c296ae9c9d2d5c4134b4b64d01b29ac19ff6f) | `6e6c296ae9c9d2d5c4134b4b64d01b29ac19ff6f` | 402 |
 | `testdata/json` | [nst/JSONTestSuite](https://github.com/nst/JSONTestSuite/tree/1ef36fa01286573e846ac449e8683f8833c5b26a) | `1ef36fa01286573e846ac449e8683f8833c5b26a` | 318 |
 
@@ -30,8 +33,10 @@ repository's [License](https://github.com/yaml/yaml-test-suite/blob/main/License
 
 ## Assertions and policies
 
-- **TOML:** every `.toml` file listed in `files-toml-1.1.0` is tested: 214 valid
-  and 467 invalid documents. The list also names the JSON references; these are
+- **TOML:** strict 1.0 runs every `.toml` file in `files-toml-1.0.0`: 205 valid
+  and 474 invalid documents. Strict 1.1 and auto each run `files-toml-1.1.0`:
+  214 valid and 467 invalid documents. This includes inputs forbidden in 1.0
+  but allowed in 1.1. The lists also name the JSON references; these are
   not extra TOML inputs. Valid documents must match the typed JSON reference,
   including array/table shapes, scalar types, decoded strings, integer values,
   float values and signed zero, NaNs/infinities, and temporal types. Finite floats
@@ -61,9 +66,9 @@ unit, integration, and fuzz tests continue to check editing and query semantics.
 1. Check out the chosen upstream revisions in temporary directories. For
    JSONTestSuite, use a sparse checkout of `test_parsing` to avoid downloading its
    large results and third-party parser collections.
-2. Replace the TOML fixture directory with the files named by
-   `tests/files-toml-1.1.0`, the manifest itself, and `LICENSE`. Copy both `.toml`
-   and `.json` entries, without newline conversion.
+2. Replace the TOML fixture directory with the union of files named by
+   `tests/files-toml-1.0.0` and `tests/files-toml-1.1.0`, both manifests, and
+   `LICENSE`. Copy both `.toml` and `.json` entries, without newline conversion.
 3. Replace the YAML fixture directory with every directory containing `in.yaml`.
    Copy `in.yaml`, `test.event`, `in.json`, `error`, and `===` when present,
    retaining numbered subdirectories. Copy the upstream license separately.

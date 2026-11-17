@@ -56,6 +56,11 @@ jobs:
           go-version: ${{ matrix.go }}
           cache: false
       - run: go vet ./...
+      - name: TOML version golden tests and reference suites (1.0, 1.1, auto)
+        shell: bash
+        run: |
+          go test ./formats/toml -run '^TestVersionGolden$' -count=1
+          go test ./conformance -run '^TestTOMLTestSuite$' -count=1
       - name: Tests and pinned parser suites with race detection
         if: matrix.race
         run: go test -race -cover ./...

@@ -33,6 +33,11 @@ dates and times, `inf`, and `nan`. Inline tables may span lines, contain comment
 and end with a trailing comma. Strings support `\e` and `\xHH` escapes; times may
 omit seconds.
 
+The default target for generation is TOML 1.0. Input using 1.1 features
+automatically selects 1.1 for that document. Use `--format-version 1.0` or
+`tql.WithVersion("1.0")` to reject newer syntax, or select `1.1` explicitly.
+See [format versions](library.md#format-versions) for API behavior.
+
 Integers are limited to signed 64-bit values; float overflow is rejected. Decimal
 float spelling is retained for calculations rather than rounded to `float64`.
 Dates are validated, but leap seconds are unsupported. Duplicate keys and

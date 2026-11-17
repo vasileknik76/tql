@@ -342,7 +342,7 @@ func renderInsertion(src []byte, value any, template *syntax.Node, s insertionSt
 		}
 		sort.Strings(keys)
 		parts := make([]string, 0, len(keys))
-		multiline := template != nil && template.Style == "inline" && template.Start >= 0 && strings.Contains(string(src[template.Start:template.End]), "\n")
+		multiline := template != nil && template.Style == "inline" && template.Meta["multiline"] == true
 		itemIndent := baseIndent + s.unit
 		if multiline && s.policy.Indent == "" {
 			entries := sectionEntries(template)
@@ -502,7 +502,7 @@ func appendArrayStyled(src []byte, parent *syntax.Node, values []any, policy syn
 func insertInlineAssignment(src []byte, owner *syntax.Node, assignment string, s insertionStyle) []syntax.Edit {
 	open, closing := owner.Start+1, owner.End-1
 	entries := inlineEntries(owner)
-	if !strings.Contains(string(src[open:closing]), "\n") {
+	if owner.Meta["multiline"] != true {
 		if len(entries) == 0 {
 			gap := string(src[open:closing])
 			return []syntax.Edit{edit(open, open, gap+assignment)}

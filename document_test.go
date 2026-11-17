@@ -11,6 +11,7 @@ import (
 
 	"github.com/vasileknik76/tql"
 	jsonformat "github.com/vasileknik76/tql/formats/json"
+	tomlformat "github.com/vasileknik76/tql/formats/toml"
 	"github.com/vasileknik76/tql/syntax"
 )
 
@@ -551,6 +552,74 @@ func TestParseWithRespectsWrapperParse(t *testing.T) {
 	}
 	if spy.parse != 1 {
 		t.Fatalf("wrapper Parse calls: %d", spy.parse)
+	}
+}
+
+type guardedTOMLFormat struct {
+	tomlformat.Format
+	reject string
+	parses *int
+}
+
+func (f guardedTOMLFormat) Parse(source []byte) (*syntax.Node, error) {
+	*f.parses++
+	if f.reject == "Parse" && *f.parses > 1 {
+		return nil, fmt.Errorf("wrapper rejected Parse")
+	}
+	return f.Format.Parse(source)
+}
+
+func (f guardedTOMLFormat) Insert(source []byte, root, parent *syntax.Node, key string, value any) ([]syntax.Edit, error) {
+	if f.reject == "Insert" {
+		return nil, fmt.Errorf("wrapper rejected Insert")
+	}
+	return f.Format.Insert(source, root, parent, key, value)
+}
+
+func (f guardedTOMLFormat) Replace(source []byte, root, target *syntax.Node, value any) ([]syntax.Edit, error) {
+	if f.reject == "Replace" {
+		return nil, fmt.Errorf("wrapper rejected Replace")
+	}
+	return f.Format.Replace(source, root, target, value)
+}
+
+func (f guardedTOMLFormat) Delete(source []byte, root, target *syntax.Node) ([]syntax.Edit, error) {
+	if f.reject == "Delete" {
+		return nil, fmt.Errorf("wrapper rejected Delete")
+	}
+	return f.Format.Delete(source, root, target)
+}
+
+func TestParseWithPreservesTOMLWrapper(t *testing.T) {
+	for _, source := range []string{"a=1\n", "a=1\nclock=14:00\n"} {
+		for _, pointer := range []bool{false, true} {
+			for _, tc := range []struct{ method, query string }{
+				{"Insert", "b=2"},
+				{"Replace", "a=2"},
+				{"Delete", "del(a)"},
+				{"Parse", "b=2"},
+			} {
+				t.Run(fmt.Sprintf("%s/pointer=%t/%s", source, pointer, tc.method), func(t *testing.T) {
+					parses := 0
+					wrapper := guardedTOMLFormat{reject: tc.method, parses: &parses}
+					var backend tql.Format = wrapper
+					if pointer {
+						backend = &wrapper
+					}
+					doc, err := tql.ParseWith([]byte(source), backend)
+					if err != nil {
+						t.Fatal(err)
+					}
+					result, err := doc.Exec(tc.query)
+					if err == nil || !strings.Contains(err.Error(), "wrapper rejected "+tc.method) {
+						t.Fatalf("wrapper %s was bypassed: result=%v err=%v", tc.method, result, err)
+					}
+					if result != nil || !bytes.Equal(doc.Bytes(), []byte(source)) {
+						t.Fatal("rejected edit changed the document")
+					}
+				})
+			}
+		}
 	}
 }
 
