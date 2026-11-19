@@ -2,6 +2,7 @@ package yaml
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/vasileknik76/tql/syntax"
@@ -76,8 +77,23 @@ func TestInvalidNativeTags(t *testing.T) {
 	}
 }
 
+func TestRejectDuplicatePendingTags(t *testing.T) {
+	for _, src := range []string{
+		"! !\r0", "! !\n0", "! !\r\n0", "!!str !!str\n0", "!!str !!str",
+		"!!str !!int\n0", "! ! # comment\n0",
+		"x: ! !\n  0", "- ! !\n  0",
+		"! &a !\n0", "&a ! !\n0", "! ! &a\n0",
+	} {
+		t.Run(src, func(t *testing.T) {
+			if _, err := ParseStream([]byte(src)); err == nil || !strings.Contains(err.Error(), "duplicate tag properties") {
+				t.Fatalf("expected duplicate tag error for %q, got %v", src, err)
+			}
+		})
+	}
+}
+
 func TestRemovingRootTagKeepsPropertyIndentation(t *testing.T) {
-	for _, source := range []string{"!!str\t", "!!str\t0", "!!map\t{}", "!!seq\t[]", "!!str &0\n0", "  !!map &0\n  a: 0", "!!str\t&a\n0"} {
+	for _, source := range []string{"!!str\t", "!!str\t0", "!!map\t{}", "!!seq\t[]", "!!str &0\n0", "  !!map &0\n  a: 0", "!!str\t&a\n0", "&a !!str\n0", "!!str &a\r0", "&a !!str\r\n0", "!!str &a", "&a !!str"} {
 		t.Run(source, func(t *testing.T) {
 			root := parse(t, source)
 			out := replace(t, source, root, true)
