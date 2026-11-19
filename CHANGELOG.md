@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Reject duplicate YAML tag properties when the value follows on another line,
+  preventing replacements from silently changing type.
+
 - Default TOML generation to 1.0, detecting 1.1 features in existing input.
   Add strict target versions through `tql.WithVersion` and CLI `--format-version`;
   incompatible input and edits fail without changing the document.
