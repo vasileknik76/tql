@@ -356,6 +356,9 @@ func FuzzParse(f *testing.F) {
 	})
 }
 func FuzzEdits(f *testing.F) {
+	for _, src := range []string{"! !\r0", "!!str !!str\n0", "!!str &a\n0", "&a !!str\n0"} {
+		f.Add([]byte(src))
+	}
 	for _, src := range []string{"a: 1\n", "[1, {b: 'a'}]", "x: |\n  text\n", "- a: 1\n  b: 2\n", "x: first\n  second\n", "- - a\n  - b\n", "# hi", "---\n...\n", "x: !!str 123\n", "!!map\nx: 1\n", "!!str", "[!!str 1, 2]", "\t{}"} {
 		f.Add([]byte(src))
 	}

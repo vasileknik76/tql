@@ -759,10 +759,10 @@ func (p *parser) value(start, end, indent int) (*syntax.Node, error) {
 		if e != nil {
 			return nil, e
 		}
+		if _, exists := pendingTag(n); exists {
+			return nil, errAt(tag.start, "duplicate tag properties")
+		}
 		if _, ok := pending(n); ok {
-			if _, exists := pendingTag(n); exists {
-				return nil, errAt(tag.start, "duplicate tag properties")
-			}
 			n.Meta["pendingTag"] = tag
 			return n, nil
 		}
