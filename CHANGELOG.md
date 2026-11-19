@@ -2,15 +2,18 @@
 
 ## Unreleased
 
+## v0.5.1
+
 - Default TOML generation to 1.0, detecting 1.1 features in existing input.
   Add strict target versions through `tql.WithVersion` and CLI `--format-version`;
-  incompatible input and edits fail without changing the document.
-
+  incompatible input and edits fail without changing the document. Keep the
+  selected target fixed for the document's lifetime and add pinned TOML 1.0/1.1
+  reference suites and version golden tests.
 - Cut parser allocations: all three formats allocate tree nodes and object
   entries in blocks, JSON skips the per-object duplicate-key map for small
   objects, YAML projection shares node metadata with the parsed tree, and
-  documents parse strings and numbers in place instead of copying them. YAML
-  also classifies plain numbers without regular expressions.
+  document-owned JSON buffers are parsed in place so strings and numbers do not
+  need copying. YAML also classifies plain numbers without regular expressions.
 
 ## v0.5.0
 
